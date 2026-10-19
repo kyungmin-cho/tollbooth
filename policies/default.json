@@ -1,0 +1,6 @@
+{
+  "perCallCapCents": 50,
+  "sessionCapCents": 500,
+  "humanApprovalAboveCents": 30,
+  "allowedMerchants": ["tollbooth.demo"]
+}

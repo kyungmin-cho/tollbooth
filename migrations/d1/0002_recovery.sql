@@ -1,0 +1,13 @@
+ALTER TABLE session_index ADD COLUMN provider TEXT NOT NULL DEFAULT 'sandbox' CHECK(provider='sandbox');
+ALTER TABLE session_index ADD COLUMN order_id TEXT;
+ALTER TABLE session_index ADD COLUMN authorization_id TEXT;
+CREATE UNIQUE INDEX order_mapping ON session_index(order_id) WHERE order_id IS NOT NULL;
+CREATE UNIQUE INDEX authorization_mapping ON session_index(authorization_id) WHERE authorization_id IS NOT NULL;
+CREATE INDEX owner_admission ON session_index(owner_id,created_at);
+CREATE INDEX daily_admission ON session_index(created_at);
+CREATE TABLE charge_projection(session_id TEXT PRIMARY KEY,merchant_id TEXT NOT NULL,provider TEXT NOT NULL,version INTEGER NOT NULL,kind TEXT NOT NULL,status TEXT NOT NULL,amount_cents INTEGER NOT NULL,capture_id TEXT,authorization_id TEXT NOT NULL,request_id TEXT NOT NULL,release_evidence TEXT NOT NULL,post_settlement_issue TEXT,projected_at INTEGER NOT NULL);
+CREATE UNIQUE INDEX capture_mapping ON charge_projection(capture_id) WHERE capture_id IS NOT NULL;
+CREATE INDEX merchant_charges ON charge_projection(merchant_id,provider,status,projected_at,session_id);
+CREATE TABLE usage_projection(session_id TEXT NOT NULL,call_key TEXT NOT NULL,tool TEXT NOT NULL,amount_cents INTEGER NOT NULL,committed_at INTEGER NOT NULL,PRIMARY KEY(session_id,call_key));
+CREATE TABLE webhook_pending(event_id TEXT PRIMARY KEY,event_type TEXT NOT NULL,resource_id TEXT NOT NULL,body_hash TEXT NOT NULL,metadata_json TEXT NOT NULL,received_at INTEGER NOT NULL,next_attempt_at INTEGER NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL DEFAULT 'PENDING');
+CREATE INDEX webhook_due ON webhook_pending(status,next_attempt_at);

@@ -1,0 +1,55 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tollbooth",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-10-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SESSIONS",
+        "class_name": "SessionDO"
+      }
+    ]
+  },
+  "exports": {
+    "SessionDO": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tollbooth-m1",
+      "database_id": "33319057-6712-4276-bf92-8727589c68fb",
+      "migrations_dir": "migrations/d1"
+    }
+  ],
+  "assets": {
+    "directory": "dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/mcp", "/paypal/*", "/webhooks/*", "/health"]
+  },
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+  "vars": {
+    "APP_ORIGIN": "https://tollbooth.arcsolve.workers.dev",
+    "ENVIRONMENT": "sandbox-remote",
+    "MERCHANT_ID": "tollbooth.demo"
+  },
+  "account_id": "8fb5f047b64293ae01e681d28c503798",
+  "preview_urls": false,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "redact_query_string": true
+  },
+  "ai": {
+    "binding": "AI"
+  },
+  "minify": true
+}

@@ -1,0 +1,5 @@
+# Package-manager build policy only; one package, no workspace packages.
+allowBuilds:
+  core-js-pure: false
+  esbuild: true
+  workerd: true

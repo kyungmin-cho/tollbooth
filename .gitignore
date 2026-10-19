@@ -1,0 +1,31 @@
+# Credentials and local configuration (no example exception by default)
+.dev.vars
+.dev.vars.*
+.env*
+**/.env*
+**/.dev.vars*
+*.pem
+*.key
+# Dependencies and generated outputs
+node_modules/
+dist/
+coverage/
+.wrangler/
+.vite/
+.pnpm-store/
+# Private evidence and local databases
+_runs/
+data/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.log
+playwright-report/
+test-results/
+# Editor and OS files
+.DS_Store
+.idea/
+
+# Generated runtime declarations; regenerate via pnpm types
+worker-configuration.d.ts

@@ -1,0 +1,47 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tollbooth-browser-test",
+  "main": "runtime.ts",
+  "compatibility_date": "2026-10-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SESSIONS",
+        "class_name": "SessionDO"
+      }
+    ]
+  },
+  "exports": {
+    "SessionDO": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tollbooth-local",
+      "database_id": "00000000-0000-0000-0000-000000000001",
+      "migrations_dir": "../../migrations/d1"
+    }
+  ],
+  "assets": {
+    "directory": "../../dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/mcp", "/paypal/*", "/webhooks/*", "/__test__/*"]
+  },
+  "vars": {
+    "APP_ORIGIN": "http://127.0.0.1:8790",
+    "ENVIRONMENT": "browser-test",
+    "MERCHANT_ID": "tollbooth.demo",
+    "PAYPAL_CLIENT_ID": "browser-fixture-client",
+    "PAYPAL_CLIENT_SECRET": "browser-fixture-secret",
+    "PAYPAL_MERCHANT_ID": "BROWSER-FIXTURE",
+    "OWNER_TOKEN_SIGNING_KEY": "browser-fixture-signing-key-000000000000000000",
+    "MERCHANT_ADMIN_TOKEN": "browser-fixture-admin-000000000000000000000000",
+    "MERCHANT_COOKIE_SIGNING_KEY": "browser-fixture-cookie-key-000000000000000000"
+  }
+}
