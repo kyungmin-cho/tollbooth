@@ -2,9 +2,22 @@
 
 # Tollbooth
 
-Tollbooth lets AI agents use paid MCP tools within a human-approved budget. A buyer approves a PayPal sandbox wallet limit; a deterministic policy checks every call, a durable ledger records successful usage, and closing the session captures that usage once—or voids the authorization when nothing was used. Tool publishers get a merchant dashboard and buyers get a receipt. The built-in Workers AI planner chooses a three-tool research plan; it cannot approve its own spending.
+**Your AI agent pays per tool call from one PayPal hold. Approve USD 5, pay USD 0.90 for what it used, and the rest is released.**
 
-**[Demo](https://tollbooth.arcsolve.workers.dev) · [Judge guide](https://tollbooth.arcsolve.workers.dev/judge)**
+Tollbooth is agentic commerce with the person still in charge. You approve one PayPal authorization, which holds the money without charging it. A Workers AI planner picks three paid MCP tools for a research task: a USD 0.20 coffee demand lookup and two USD 0.35 landed-cost estimates for Korea and Japan. Calls above USD 0.30 wait for your OK, and the agent can't approve its own spending. A retry returns the stored result at USD 0.00. When you finish, PayPal captures USD 0.90 once and the other USD 4.10 is never charged. If nothing was used, the authorization is voided.
+
+**[Try the rehearsal, no login](https://tollbooth.arcsolve.workers.dev/run/rehearsal) · [Judge guide](https://tollbooth.arcsolve.workers.dev/judge) · Video: <!-- YouTube URL after upload -->**
+
+Verified in PayPal sandbox on October 19, 2026: capture `2RA569713M861961N` for USD 0.90 after a real Workers AI plan, a voided zero-use authorization `2FC89859D10835132`, and six PayPal-signed webhooks verified before they were applied. Code gate: 177 Vitest and 15 Playwright tests. [Evidence and limits](docs/HARDENING.md)
+
+## How PayPal and AI fit together
+
+1. **PayPal Orders v2, `intent: AUTHORIZE`.** You approve the session limit in your PayPal wallet.
+2. **Workers AI (`@cf/zai-org/glm-4.7-flash`)** proposes the tool calls. It never holds a payment credential.
+3. **Policy and consent.** A deterministic policy checks price, merchant and budget, and you decide anything above the threshold. When you close the session, Tollbooth sends a single capture with `final_capture: true` for metered usage, or voids the hold if nothing was used.
+4. **Verified webhooks.** Every PayPal event must pass `verify-webhook-signature` before it counts. Pending is not paid.
+
+Tool publishers see sessions and charges on a merchant dashboard ([simulated demo](https://tollbooth.arcsolve.workers.dev/demo/merchant)).
 
 ## Judge quick-start
 
@@ -19,6 +32,25 @@ No owner credentials are required for the public rehearsal. Real merchant views 
 Use Streamable HTTP at `https://tollbooth.arcsolve.workers.dev/mcp`. Discovery works without credentials. Modern `2026-07-28` and legacy `2025-11-25` are tested; arbitrary host compatibility is not assumed.
 
 Open [/connect](https://tollbooth.arcsolve.workers.dev/connect) in your browser, explicitly issue a temporary client credential, and configure it as the client's Authorization bearer header. Keep it in the client secret store, never in prompts or source. Paid calls require the [Tollbooth adapter](src/client/adapter.ts), its policy and human-consent callbacks, and stable call metadata (`sessionId`, `callKey`, `maxPriceCents`, `pricingVersion`) under `params._meta.tollbooth`. `tollbooth_open`, `tollbooth_status` and `tollbooth_close` manage the separate business session. A payment-required tool result is not automatic permission to pay. The [contract tests](tests/contract/mcp.test.ts) show both wire lanes.
+
+## Run locally
+
+Node 26.10 and pnpm 12.5.1; dependency versions are locked.
+
+```sh
+pnpm install --frozen-lockfile
+pnpm test
+pnpm typecheck
+pnpm lint
+pnpm build
+pnpm db:local
+pnpm dev
+# http://127.0.0.1:8787
+pnpm test:browser
+pnpm verify:secrets
+```
+
+The credential-free rehearsal needs no PayPal keys. Financial tests use synthetic provider responses in real Workers/DO/D1 runtimes. For local real sandbox sessions, create ignored `.dev.vars` with `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_MERCHANT_ID`, and an independently generated `OWNER_TOKEN_SIGNING_KEY` (at least 32 characters); chmod 0600. Optional merchant access needs independent `MERCHANT_ADMIN_TOKEN` and `MERCHANT_COOKIE_SIGNING_KEY`. Webhooks additionally need a registered `PAYPAL_WEBHOOK_ID`. Never use `VITE_*` for secrets. See [sandbox instructions](docs/M5.md#sandbox-driver) and [webhook setup](docs/M2-M3.md#webhook-registration). Local Playwright uses port 8790 and synthetic provider/model fixtures; it creates no real orders.
 
 ## Architecture and money safety
 
@@ -39,25 +71,6 @@ One Cloudflare Worker serves Vite/React assets and stateless MCP. Each session h
 - Unknown provider outcomes reconcile existing identities; they do not create a new capture.
 - Durable alarms, outbox and recovery scans survive browser closure. D1 is never spending authority.
 - PayPal `verify-webhook-signature` must return SUCCESS before durable ingress. Approval redirects alone are not authorization; pending is not paid.
-
-## Run locally
-
-Node 26.10 and pnpm 12.5.1; dependency versions are locked.
-
-```sh
-pnpm install --frozen-lockfile
-pnpm test
-pnpm typecheck
-pnpm lint
-pnpm build
-pnpm db:local
-pnpm dev
-# http://127.0.0.1:8787
-pnpm test:browser
-pnpm verify:secrets
-```
-
-The credential-free rehearsal needs no PayPal keys. Financial tests use synthetic provider responses in real Workers/DO/D1 runtimes. For local real sandbox sessions, create ignored `.dev.vars` with `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_MERCHANT_ID`, and an independently generated `OWNER_TOKEN_SIGNING_KEY` (at least 32 characters); chmod 0600. Optional merchant access needs independent `MERCHANT_ADMIN_TOKEN` and `MERCHANT_COOKIE_SIGNING_KEY`. Webhooks additionally need a registered `PAYPAL_WEBHOOK_ID`. Never use `VITE_*` for secrets. See [sandbox instructions](docs/M5.md#sandbox-driver) and [webhook setup](docs/M2-M3.md#webhook-registration). Local Playwright uses port 8790 and synthetic provider/model fixtures; it creates no real orders.
 
 ## Deployment (operator only)
 

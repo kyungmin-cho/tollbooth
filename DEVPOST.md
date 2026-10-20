@@ -1,59 +1,88 @@
 # Tollbooth
 
-**Tagline:** Human-approved budgets for paid AI tools.
+**Tagline:** Your AI agent pays per tool call from one PayPal hold. Approve USD 5, pay USD 0.90 for what it used, and the rest is released.
 
-**Demo:** https://tollbooth.arcsolve.workers.dev
+**Demo:** https://tollbooth.arcsolve.workers.dev (start at `/judge`; the rehearsal needs no login)
 
-**Repository / public YouTube URL:** Pending owner-approved publication. This file is a local submission draft, not a submitted entry.
+**Repository:** https://github.com/kyungmin-cho/tollbooth (MIT)
+
+**Video:** <YouTube URL — insert after upload>
 
 ## Inspiration
 
-A useful AI agent may need a paid lookup or calculation. Giving it a payment credential does not answer who approved the spend, what happens when a request retries, or how to settle after a crash. We built Tollbooth for tool publishers and people using agents: approve a budget, meter successful calls, and settle the actual usage.
+Picture someone who sells coffee online and wants to know whether a USD 45 item is worth shipping to Korea or Japan. They ask an AI agent. To answer, the agent needs a paid demand lookup and two paid landed-cost estimates: three tool calls, USD 0.90 in total.
+
+Handing the agent a card number doesn't settle much. Who set the limit? Who said yes to the bigger calls? If a request retries, does it get paid twice? Agentic commerce needs an agent that can spend real money while the person stays in control, and PayPal already has the pieces for that. Tollbooth is our PayPal + AI answer: it puts those pieces in front of paid MCP tools.
 
 ## What it does
 
-A buyer approves a PayPal sandbox wallet limit. A Workers AI model selects three MCP tools for a fixed market-and-shipping research task. A deterministic policy checks the proposed prices, merchant and budget; the human approves calls above the threshold. The model never holds a payment credential or overrides policy.
+The person approves one PayPal authorization of USD 5. Nothing is charged yet; it's a hold.
 
-The workspace shows accrued and reserved amounts, a call ledger and a receipt. Closing captures successful usage once, or voids a zero-use authorization. Merchants can inspect sessions and charges through an AG Grid Community dashboard. Credential-free rehearsal and a separate simulated dashboard let anyone explore the experience without a PayPal login.
+The agent then works inside that hold. Workers AI picks the three tools for the task, and each successful call is metered: USD 0.20 for the coffee demand lookup, USD 0.35 for each landed-cost estimate. The policy asks the person before any call above USD 0.30 and blocks anything above USD 0.50. The agent can't approve its own spending. If it retries a call, Tollbooth returns the stored result and adds USD 0.00.
+
+When the person finishes, Tollbooth captures USD 0.90 once on PayPal and the other USD 4.10 is never charged. A session that used nothing has its authorization voided. The person gets a receipt.
 
 ## How we built it
 
-TypeScript runs in one Cloudflare Worker. The Agents SDK createMcpHandler serves stateless MCP, while a SQLite Durable Object owns each payment session. Atomic reservations and persistent operation identities separate execution from settlement. A durable outbox projects data into D1; alarms and recovery scans do not depend on the browser remaining open.
+We built it around the PayPal flow, in the order money moves.
 
-PayPal Orders v2 uses AUTHORIZE, followed by an explicit final capture or void. Webhooks call PayPal's verify-webhook-signature API before entering the durable inbox. Vite, React, Tailwind and shadcn Base UI provide the buyer screens; AG Grid Community handles merchant grids.
+1. **Hold.** Orders v2 with `intent: AUTHORIZE`. The buyer approves the session limit in their PayPal wallet. The hold is the ceiling the buyer agreed to, and Tollbooth only ever captures metered usage. A browser redirect back from PayPal doesn't count as approval; Tollbooth checks the authorization with PayPal first.
+2. **Consent.** Before a call above the threshold runs, the buyer sees its price and says yes or no in the app.
+3. **Capture or void.** Closing a session sends a single capture with `final_capture: true` for the exact usage, or a void when there was none. If PayPal's answer is lost, Tollbooth reconciles against the existing order and never issues a second capture.
+4. **Verified webhooks.** Every PayPal event goes through `verify-webhook-signature` and must return SUCCESS before it enters the session's durable inbox. A pending capture is not shown as paid.
 
-The actual AI model is Workers AI `@cf/zai-org/glm-4.7-flash`. It chooses tools from the catalog for one bounded planning round. The existing MCP adapter executes only schema-valid, policy-approved calls with stable replay identities. Daily quotas and token limits bound inference; unavailable AI is labeled as scripted fallback. AI coding assistance helped implementation and tests; the supplied logo concepts were AI-generated and the chosen mark was manually redrawn as SVG.
+The AI side is Workers AI running `@cf/zai-org/glm-4.7-flash`. It reads the tool catalog and the task, then proposes calls in one bounded planning round. It never holds a payment credential. A deterministic policy checks price, merchant and budget, and the human decides above the threshold. The MCP adapter executes only schema-valid, policy-approved calls with stable replay identities. Daily quotas and token limits cap inference, and when the model is unavailable the UI says so and offers scripted tools. MCP clients connect over Streamable HTTP at `/mcp`; our contract tests cover protocol versions `2026-07-28` and `2025-11-25`.
+
+All of this runs in one Cloudflare Worker written in TypeScript. The Agents SDK `createMcpHandler` serves stateless MCP, and each payment session lives in its own SQLite Durable Object. Prices are integer cents set by the server, and each call reserves budget before it runs. Ledger rows reach D1 through a durable outbox, and alarms plus recovery scans finish settlement even if the browser closes. The UI uses Vite, React, Tailwind and shadcn Base UI.
+
+AI coding assistants helped with implementation and tests. The logo concepts were AI-generated; we redrew the chosen mark by hand as SVG.
+
+## Impact
+
+For the buyer the numbers are small and exact. They approve USD 5, pay USD 0.90, and the remaining USD 4.10 is never charged. A retried call costs nothing extra, and the agent can't go past the hold or skip the questions above USD 0.30.
+
+The tool publisher gets a way to sell a 20-cent lookup to an agent. Three small calls end up as one PayPal capture at the end of the session rather than three separate payments, and the publisher can see each session and charge on a dashboard.
+
+## Innovation
+
+Approval gates and spending limits for agents already exist. Tollbooth's addition is the shape of the money: the buyer approves a limit once in PayPal, the agent makes many small paid calls under it, and PayPal settles one exact amount at the end.
+
+PayPal's Agent Toolkit covers orders, invoices, subscriptions and refunds. When we checked its tool list on October 17, 2026, it had no tool for authorizing a hold or voiding one. Tollbooth builds that piece itself and uses the hold as the session limit for per-call pricing.
+
+Consent is per call and only above a threshold. In this task the person is asked twice, for the two USD 0.35 estimates, and the USD 0.20 lookup runs on its own.
+
+## Design
+
+There are two screens. The buyer workspace shows the approved limit, accrued and reserved amounts, a call ledger and the consent dialog, and closing it gives a receipt. The merchant view lists sessions and charges in an AG Grid Community table, including pending and reconciling states. Every rehearsal screen carries a "simulated" label so nobody mistakes it for a live payment.
 
 ## Challenges
 
-A Durable Object is not a lock across a network await. We needed leases, fences, reserved cents and a closing barrier. PayPal can complete a payment before every GET view converges, so verification polls authoritative state without repeating a capture. A stale dashboard must not become spending authority. Free-plan cold CPU also required moving immutable schema work to startup and simplifying discovery.
+A Durable Object doesn't stay locked across a network await, so we needed leases, a closing barrier and reserved cents to stop a late call from slipping in after "finish". PayPal can complete a payment before every GET view agrees, which meant polling authoritative state without ever repeating a capture.
 
 ## Accomplishments
 
-The local gate passed 177 unit/Workers/contract tests and 15 browser tests. A deployed run executed the saved real AI plan: three successful calls, a free replay and one USD 0.90 capture. A separate zero-use session voided its authorization. Six genuine sandbox webhook events passed verification and reached the session inboxes. Two modest free-endpoint load batches completed 600 reads with no errors.
+On October 19, 2026 we ran the real path in PayPal sandbox. The Workers AI plan executed three calls plus a free replay, and PayPal recorded one capture, `2RA569713M861961N`, for USD 0.90. A separate zero-use session's authorization, `2FC89859D10835132`, was voided. Six genuine sandbox webhooks (CHECKOUT.ORDER.APPROVED ×2, PAYMENT.AUTHORIZATION.CREATED ×2, PAYMENT.CAPTURE.COMPLETED ×1, PAYMENT.AUTHORIZATION.VOIDED ×1) passed signature verification and were applied.
 
-These are sandbox results, not production claims. The video demonstrates the public simulated experience and labels the separately verified real-run results.
+The code gate is 177 Vitest tests and 15 Playwright tests. Two load batches on the free plan each completed 300 reads at concurrency 20 with zero errors.
+
+These are sandbox results. We don't claim production readiness. The video labels every shot: a screenshot of the live sandbox site with a real Workers AI plan, the simulated rehearsal, and cards carrying the real sandbox results.
 
 ## What we learned
 
-Reliable payment behavior comes from identities that survive retries and evidence that distinguishes pending from complete. An AI plan, human consent, a tool result and payment settlement are different decisions. Making those boundaries visible improved both recovery and the interface.
+An AI plan, a human's consent, a tool result and a PayPal settlement are four separate decisions. Once each had its own identity and its own evidence, retries stopped being scary and the interface got simpler.
 
 ## What's next
 
-Observe a genuine webhook redelivery and confirm deduplication end-to-end: our runtime tests pass, but a live resend was accepted without observed arrival in the ten-minute window. Expand the tool catalog and host compatibility tests, increase cold-start CPU headroom, and validate merchant demand before pursuing production payments. Current limits are sandbox-only, USD, one merchant and a fixed AI task.
+First, webhook redelivery. After we moved the webhook address, a PayPal resend reached the new endpoint with HTTP 200 and durable ingress stayed unchanged. We matched that request by timing, because our logs leave out payloads and event IDs. Runtime tests cover deduplication, but we haven't yet confirmed it end to end against a live redelivery.
+
+After that: more tools in the catalog, compatibility tests with MCP hosts, more cold-start CPU headroom, and conversations with tool publishers. The current scope is sandbox-only, USD, one merchant and one fixed research task.
 
 ## Built with
 
-PayPal Orders v2; PayPal Webhooks; Cloudflare Workers, SQLite Durable Objects, D1 and Workers AI; GLM-4.7-Flash; Cloudflare Agents SDK; Model Context Protocol; TypeScript; Vite; React; Tailwind CSS; shadcn/ui (Base UI); AG Grid Community; Zod; Vitest; Playwright; Wrangler; pnpm.
+PayPal Orders v2 (AUTHORIZE, capture, void) · PayPal Webhooks (verify-webhook-signature) · Workers AI (GLM-4.7-Flash) · Model Context Protocol · Cloudflare Workers, SQLite Durable Objects, D1 · Cloudflare Agents SDK · TypeScript · Vite · React · Tailwind CSS · shadcn/ui (Base UI) · AG Grid Community · Zod · Vitest · Playwright · Wrangler · pnpm
 
 ## Testing instructions for judges
 
-Start at `/judge` on the demo domain. `/run/rehearsal` and `/demo/merchant` are credential-free and explicitly simulated. Real payments require your own Personal PayPal sandbox buyer account; create one through PayPal Developer Sandbox Accounts. Open a USD 5 session, request the AI plan, approve the wallet, return to the same browser, check authorization, approve the two above-threshold calls, and finish. Expect USD 0.90 after three calls. Never use a real buyer password. The README includes setup and MCP instructions. Owner credentials are not public. Free quotas can pause real runs; rehearsal and fixture-based local tests remain available.
+**No login:** open https://tollbooth.arcsolve.workers.dev/run/rehearsal and run the coffee lookup, allow the two USD 0.35 estimates, replay coffee and finish. You'll see USD 0.90 settled and USD 4.10 unused. The rehearsal is simulated and makes no payment or AI call. `/demo/merchant` shows the publisher view with sample data.
 
-## Owner-only submission decisions (remove from submitted description)
-
-Choose the public repository host/name and authorize publication. Upload the reviewed video publicly to YouTube and insert its URL. Confirm eligibility, entrant/team identity, contact details, source/brand rights, any pre-existing baseline disclosure, and whether to enter the AG Grid sponsor category. Keep the demo available throughout judging; resolve real-run quota/access constraints before submission. The authenticated form's additional fields must be reviewed by the owner; no form was opened or submitted here.
-
-## 사장님 요약 — 제출 본문에서 제외
-
-AI가 유료 MCP 도구를 고르되 정책·사람 동의·원자 예약으로 지출을 제한하고 PayPal 승인 후 실제 사용액만 한 번 정산하는 제품입니다. 실제 AI 90센트 capture·0사용 void·서명 웹훅 6건은 통과했습니다. 영상은 공개 시뮬레이션이며 실결제 영상으로 가장하지 않습니다. 공개 저장소/YouTube 업로드/Devpost 제출은 아직 하지 않았습니다. 재전송 실증, Free CPU 여유, 심사 기간의 실제 실행 한도와 접근성은 남은 검토 항목입니다.
+**Real PayPal sandbox and real AI:** follow `/judge`. Create your own Personal sandbox buyer in PayPal Developer, and never use a real buyer password. Open a USD 5 session, ask the AI to choose tools, approve the wallet on PayPal, come back in the same browser, check authorization, run the plan and finish. Expect one USD 0.90 capture after three calls. Free AI and session quotas can pause real runs; the rehearsal stays available. Setup and MCP client instructions are in the README.
