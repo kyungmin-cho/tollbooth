@@ -141,6 +141,119 @@ it("duplicate delivery is idempotent; same event ID with different hash is durab
       ?.status,
   ).toBe("CONFLICT");
 });
+// Observable effects of one event: both durable inboxes, the ledger, the settlement and provider reads.
+async function effects(t: Awaited<ReturnType<typeof setup>>, eventId: string) {
+  const durable = await runInDurableObject(t.stub, (_i, s) => ({
+    inbox: s.storage.sql
+      .exec("SELECT event_id,outcome,processed_at FROM webhook_inbox ORDER BY event_id")
+      .toArray(),
+    ledger: s.storage.sql.exec("SELECT count(*) n FROM ledger").one().n,
+    settlements: s.storage.sql.exec("SELECT count(*) n FROM settlement").one().n,
+  }));
+  const ingress = await env.DB.prepare("SELECT status FROM webhook_pending WHERE event_id=?")
+    .bind(eventId)
+    .all();
+  return {
+    ...durable,
+    ingress: ingress.results,
+    status: await t.stub.status(t.owner, t.session.sessionId),
+    providerReads: vi
+      .mocked(fetch)
+      .mock.calls.filter(([u, init]) => String(u).includes("/v2/") && init?.method === "GET")
+      .length,
+    posts: t.payment.createCount + t.payment.authorizeCount + t.payment.captureCount,
+    voids: t.payment.voidCount,
+  };
+}
+it("an authorization event redelivered three times activates the session once", async () => {
+  const t = await setup(500, false);
+  t.payment.authorized = true;
+  const e = event(t);
+  await expect(receivePayPalWebhook(request(e), hookEnv())).resolves.toEqual({ accepted: true });
+  const first = await effects(t, e.id);
+  expect(first.status.state).toBe("ACTIVE");
+  expect(first.inbox).toEqual([expect.objectContaining({ event_id: e.id, outcome: "APPLIED" })]);
+  expect(first.ingress).toEqual([{ status: "DELIVERED" }]);
+  for (let i = 0; i < 2; i++)
+    await expect(receivePayPalWebhook(request(e), hookEnv())).resolves.toEqual({
+      accepted: true,
+    });
+  // Every delivery is verified; only the first reaches the session or reads the provider.
+  expect(t.payment.verificationPayloads).toHaveLength(3);
+  expect(await effects(t, e.id)).toEqual(first);
+  expect(t.payment.authorizeCount).toBe(0);
+});
+it("a redelivered event ID with a failing signature is rejected, not treated as a duplicate", async () => {
+  const t = await setup(500, false);
+  t.payment.authorized = true;
+  const e = event(t);
+  await receivePayPalWebhook(request(e), hookEnv());
+  const first = await effects(t, e.id);
+  t.payment.verification = "FAILURE";
+  await expect(receivePayPalWebhook(request(e), hookEnv())).rejects.toThrow("WEBHOOK_INVALID");
+  expect(await effects(t, e.id)).toEqual(first);
+  t.payment.verification = "SUCCESS";
+  await expect(receivePayPalWebhook(request(e), hookEnv())).resolves.toEqual({ accepted: true });
+  expect(await effects(t, e.id)).toEqual(first);
+});
+it("a capture-completed event redelivered three times leaves one capture and one ledger entry", async () => {
+  const t = await setup();
+  await t.stub.call(t.owner, "market_lookup", { category: "coffee" }, t.meta());
+  await t.stub.close(t.owner, t.session.sessionId);
+  const e = event(t, "PAYMENT.CAPTURE.COMPLETED");
+  await receivePayPalWebhook(request(e), hookEnv());
+  const first = await effects(t, e.id);
+  expect(first).toMatchObject({ ledger: 1, settlements: 1, ingress: [{ status: "DELIVERED" }] });
+  expect(first.status).toMatchObject({ state: "CAPTURED", capturedCents: 20 });
+  expect(first.inbox).toEqual([expect.objectContaining({ outcome: "APPLIED" })]);
+  await receivePayPalWebhook(request(e), hookEnv());
+  await receivePayPalWebhook(request(e), hookEnv());
+  expect(await effects(t, e.id)).toEqual(first);
+  expect(t.payment.captureCount).toBe(1);
+  expect(t.payment.voidCount).toBe(0);
+});
+it("three concurrent deliveries of one event leave one inbox entry and one state change", async () => {
+  const t = await setup(500, false);
+  t.payment.authorized = true;
+  const e = event(t);
+  const results = await Promise.all(
+    [0, 1, 2].map(() => receivePayPalWebhook(request(e), hookEnv())),
+  );
+  expect(results).toEqual([{ accepted: true }, { accepted: true }, { accepted: true }]);
+  const after = await effects(t, e.id);
+  expect(after.status.state).toBe("ACTIVE");
+  expect(after.inbox).toEqual([expect.objectContaining({ event_id: e.id, outcome: "APPLIED" })]);
+  expect(after.ingress).toEqual([{ status: "DELIVERED" }]);
+  expect(after).toMatchObject({ ledger: 0, settlements: 0 });
+  expect(t.payment.authorizeCount + t.payment.captureCount + t.payment.voidCount).toBe(0);
+  await receivePayPalWebhook(request(e), hookEnv());
+  expect(await effects(t, e.id)).toEqual(after);
+});
+it("during a D1 ingress outage the session inbox alone deduplicates redelivery", async () => {
+  const t = await setup(500, false);
+  t.payment.authorized = true;
+  const e = event(t);
+  await env.DB.exec("ALTER TABLE webhook_pending RENAME TO hidden_pending");
+  try {
+    await receivePayPalWebhook(request(e), hookEnv());
+    const first = await runInDurableObject(t.stub, (_i, s) =>
+      s.storage.sql.exec("SELECT event_id,outcome,processed_at FROM webhook_inbox").toArray(),
+    );
+    expect(first).toEqual([expect.objectContaining({ outcome: "APPLIED" })]);
+    const state = await t.stub.status(t.owner, t.session.sessionId);
+    expect(state.state).toBe("ACTIVE");
+    await receivePayPalWebhook(request(e), hookEnv());
+    await receivePayPalWebhook(request(e), hookEnv());
+    expect(
+      await runInDurableObject(t.stub, (_i, s) =>
+        s.storage.sql.exec("SELECT event_id,outcome,processed_at FROM webhook_inbox").toArray(),
+      ),
+    ).toEqual(first);
+    expect(await t.stub.status(t.owner, t.session.sessionId)).toEqual(state);
+  } finally {
+    await env.DB.exec("ALTER TABLE hidden_pending RENAME TO webhook_pending");
+  }
+});
 it("before-mapping verified metadata is retained and replayed by scan without opening a session", async () => {
   const t = await setup();
   await env.DB.prepare(

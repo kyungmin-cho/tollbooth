@@ -8,7 +8,7 @@ Tollbooth is agentic commerce with the person still in charge. You approve one P
 
 **[Try the rehearsal, no login](https://tollbooth.arcsolve.workers.dev/run/rehearsal) · [Judge guide](https://tollbooth.arcsolve.workers.dev/judge) · Video: <!-- YouTube URL after upload -->**
 
-Verified in PayPal sandbox on October 19, 2026: capture `2RA569713M861961N` for USD 0.90 after a real Workers AI plan, a voided zero-use authorization `2FC89859D10835132`, and six PayPal-signed webhooks verified before they were applied. Code gate: 177 Vitest and 15 Playwright tests. [Evidence and limits](docs/HARDENING.md)
+Verified in PayPal sandbox on October 19, 2026: capture `2RA569713M861961N` for USD 0.90 after a real Workers AI plan, a voided zero-use authorization `2FC89859D10835132`, and six PayPal-signed webhooks verified before they were applied. Code gate: 182 Vitest and 15 Playwright tests. [Evidence and limits](docs/HARDENING.md)
 
 ## How PayPal and AI fit together
 
@@ -78,7 +78,7 @@ The checked-in remote config targets Worker `tollbooth` and the existing D1 `tol
 
 ## Evidence and limits
 
-As of October 19: 177 Vitest tests and 15 Playwright tests passed. The deployed real AI run captured USD 0.90 once; a zero-use authorization was voided. Six genuine sandbox webhooks were verified and applied. Redelivery deduplication is covered by runtime tests. After the address move, a genuine resend reached the new webhook endpoint with HTTP 200 and unchanged durable ingress; payload-free tail evidence does not reconstruct the deleted old DO inbox.
+As of October 20: 182 Vitest tests and 15 Playwright tests passed locally. On October 19 the deployed real AI run captured USD 0.90 once; a zero-use authorization was voided. Six genuine sandbox webhooks were verified and applied. Workers-runtime tests deliver the same webhook event three times, one after another and concurrently, and the session state, ledger and capture count change only once. After the address move, a genuine resend reached the new webhook endpoint with HTTP 200 and unchanged durable ingress; payload-free tail evidence does not reconstruct the deleted old DO inbox. Live redelivery deduplication is not yet confirmed end to end.
 
 Sandbox only, USD, one merchant, synthetic tool data and a fixed research mission. No production readiness or generic agent compatibility claim. Free-plan CPU is tight: final sampled requests reached 10 ms; earlier samples reached 11/15 ms and tail omits some requests. Daily AI/session quotas can restrict real judging; local tests and public rehearsal are alternatives, not proof of live inference. Unused budget is not charged, but payment-method holds may take time to update. [Detailed evidence and limitations](docs/HARDENING.md).
 

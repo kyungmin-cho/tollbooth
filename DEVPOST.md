@@ -63,7 +63,7 @@ A Durable Object doesn't stay locked across a network await, so we needed leases
 
 On October 19, 2026 we ran the real path in PayPal sandbox. The Workers AI plan executed three calls plus a free replay, and PayPal recorded one capture, `2RA569713M861961N`, for USD 0.90. A separate zero-use session's authorization, `2FC89859D10835132`, was voided. Six genuine sandbox webhooks (CHECKOUT.ORDER.APPROVED ×2, PAYMENT.AUTHORIZATION.CREATED ×2, PAYMENT.CAPTURE.COMPLETED ×1, PAYMENT.AUTHORIZATION.VOIDED ×1) passed signature verification and were applied.
 
-The code gate is 177 Vitest tests and 15 Playwright tests. Two load batches on the free plan each completed 300 reads at concurrency 20 with zero errors.
+The code gate is 182 Vitest tests and 15 Playwright tests. Two load batches on the free plan each completed 300 reads at concurrency 20 with zero errors.
 
 These are sandbox results. We don't claim production readiness. The video labels every shot: a screenshot of the live sandbox site with a real Workers AI plan, the simulated rehearsal, and cards carrying the real sandbox results.
 
@@ -73,7 +73,7 @@ An AI plan, a human's consent, a tool result and a PayPal settlement are four se
 
 ## What's next
 
-First, webhook redelivery. After we moved the webhook address, a PayPal resend reached the new endpoint with HTTP 200 and durable ingress stayed unchanged. We matched that request by timing, because our logs leave out payloads and event IDs. Runtime tests cover deduplication, but we haven't yet confirmed it end to end against a live redelivery.
+First, webhook redelivery. After we moved the webhook address, a PayPal resend reached the new endpoint with HTTP 200 and durable ingress stayed unchanged. We matched that request by timing, because our logs leave out payloads and event IDs. In runtime tests we send the same event three times, one after another and at once, and the session changes once: one inbox entry, one capture, no new ledger entry. We haven't yet confirmed that end to end against a live redelivery.
 
 After that: more tools in the catalog, compatibility tests with MCP hosts, more cold-start CPU headroom, and conversations with tool publishers. The current scope is sandbox-only, USD, one merchant and one fixed research task.
 
